@@ -1,11 +1,6 @@
 package com.example.socketkotlin
 
-
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Bundle
-import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
@@ -13,45 +8,40 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import org.java_websocket.client.WebSocketClient
+import org.java_websocket.drafts.Draft_6455
+import org.java_websocket.handshake.ServerHandshake
 import java.net.URI
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var webSocketClient: ChatWebSocketClient
+
+    private lateinit var webSocketClient: WebSocketClient
     private lateinit var messageInput: EditText
     private lateinit var sendButton: Button
     private lateinit var messageRecyclerView: RecyclerView
     private lateinit var messageAdapter: MessageAdapter
 
-    companion object {
-        private const val TAG = "MainActivity"
-        private const val WEB_SOCKET_URL = "ws://192.168.1.249:8080"
-
-
-        private const val CURRENT_USER_ID = "user123"
-        private const val RECEIVER_USER_ID = "user456"
-    }
+    private val serverUrl = "ws://192.168.1.249:8080" // Replace with your server's IP
+    private val senderId = "user123" // Sender's ID (could be dynamic, unique for each user)
+    private val receiverId = "user456" // Receiver's ID (can be set dynamically based on the user you want to chat with)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        initializeViews()
-        setupWebSocket()
-    }
-
-    private fun initializeViews() {
         messageInput = findViewById(R.id.messageEditText)
         sendButton = findViewById(R.id.sendButton)
         messageRecyclerView = findViewById(R.id.messageRecyclerView)
 
-        messageAdapter = MessageAdapter(CURRENT_USER_ID)
-        messageRecyclerView.apply {
-            adapter = messageAdapter
-            layoutManager = LinearLayoutManager(this@MainActivity)
-        }
+        messageAdapter = MessageAdapter()
+        messageRecyclerView.layoutManager = LinearLayoutManager(this)
+        messageRecyclerView.adapter = messageAdapter
+
+        setupWebSocket()
 
         sendButton.setOnClickListener {
             sendMessage()
@@ -59,88 +49,55 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebSocket() {
-        try {
-            val uri = URI(WEB_SOCKET_URL)
-            webSocketClient = ChatWebSocketClient(
-                uri,
-                onMessageReceived = { message ->
+        val uri = URI(serverUrl)
+
+        webSocketClient = object : WebSocketClient(uri, Draft_6455()) {
+            override fun onOpen(handshakedata: ServerHandshake?) {
+                Toast.makeText(this@MainActivity, "Connected to chat server", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun onMessage(message: String?) {
+                message?.let {
+                    val chatMessage = Gson().fromJson(it, ChatMessage::class.java)
                     runOnUiThread {
-                        messageAdapter.addMessage(message)
-                        messageRecyclerView.scrollToPosition(messageAdapter.itemCount - 1)
-                    }
-                },
-                onConnectionOpen = {
-                    runOnUiThread {
-                        Toast.makeText(this, "Connected to chat", Toast.LENGTH_SHORT).show()
-                        sendButton.isEnabled = true
-                    }
-                },
-                onConnectionClose = {
-                    runOnUiThread {
-                        Toast.makeText(this, "Disconnected from chat", Toast.LENGTH_SHORT).show()
-                        sendButton.isEnabled = false
-                        reconnectWebSocket()
+                        messageAdapter.addMessage(chatMessage)
                     }
                 }
-            )
-
-            lifecycleScope.launch {
-                connectWebSocket()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "WebSocket setup error", e)
-            Toast.makeText(this, "Error setting up chat", Toast.LENGTH_SHORT).show()
-        }
-    }
 
-    private suspend fun connectWebSocket() = withContext(Dispatchers.IO) {
-        try {
+            override fun onClose(code: Int, reason: String?, remote: Boolean) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Disconnected from chat server", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onError(ex: Exception?) {
+                ex?.printStackTrace()
+            }
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
             webSocketClient.connectBlocking()
-        } catch (e: InterruptedException) {
-            Log.e(TAG, "WebSocket connection interrupted", e)
         }
     }
 
     private fun sendMessage() {
-        val messageText = messageInput.text.toString().trim()
-
-        if (!isNetworkAvailable()) {
-            Toast.makeText(this, "No internet connection", Toast.LENGTH_SHORT).show()
-            return
-        }
-
+        val messageText = messageInput.text.toString()
         if (messageText.isNotEmpty()) {
             val message = ChatMessage(
-                senderId = CURRENT_USER_ID,
-                receiverId = RECEIVER_USER_ID,
-                message = messageText
+                id = UUID.randomUUID().toString(),
+                message = messageText,
+                senderId = senderId,
+                receiverId = receiverId,
+                timestamp = System.currentTimeMillis()
             )
 
-            try {
-                webSocketClient.sendChatMessage(message)
+            webSocketClient.send(Gson().toJson(message))
+            runOnUiThread {
                 messageInput.setText("")
                 messageAdapter.addMessage(message)
-                messageRecyclerView.scrollToPosition(messageAdapter.itemCount - 1)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Failed to send message", Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    private fun reconnectWebSocket() {
-        lifecycleScope.launch {
-            webSocketClient.reconnectWebSocket()
-        }
-    }
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager =
-            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val networkCapabilities =
-            connectivityManager.getNetworkCapabilities(network) ?: return false
-
-        return networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     override fun onDestroy() {
