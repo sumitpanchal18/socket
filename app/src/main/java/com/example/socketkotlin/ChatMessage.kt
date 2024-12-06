@@ -1,9 +1,14 @@
 package com.example.socketkotlin
 
 
+import com.google.gson.Gson
+
 data class ChatMessage(
-    val sender: String,
-    val content: String,
-    val timestamp: String,
-    val type: MessageType
-)
+    val id: String,
+    val message: String,
+    val senderId: String,
+    val receiverId: String,
+    val timestamp: Long = System.currentTimeMillis()
+) {
+    fun toJson(): String = Gson().toJson(this)
+}

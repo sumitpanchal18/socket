@@ -5,35 +5,34 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+class MessageAdapter : RecyclerView.Adapter<MessageViewHolder>() {
 
-data class Message(val text: String)
-
-class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() {
-    private val messages = mutableListOf<Message>()
+    private val messages = mutableListOf<ChatMessage>()
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MessageViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_1, parent, false)
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.message_item, parent, false)
         return MessageViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
         val message = messages[position]
-        holder.messageTextView.text = message.text
+        holder.bind(message)
     }
 
-    override fun getItemCount(): Int {
-        return messages.size
-    }
+    override fun getItemCount(): Int = messages.size
 
-    // Inside MessageAdapter
-    fun addMessage(message: Message) {
+    fun addMessage(message: ChatMessage) {
         messages.add(message)
-        notifyItemInserted(messages.size - 1)  // Notify RecyclerView that a new message has been added
+        notifyItemInserted(messages.size - 1)
     }
+}
 
+class MessageViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+    private val messageText: TextView = view.findViewById(R.id.messageText)
+    private val senderIdText: TextView = view.findViewById(R.id.senderIdText)
 
-    class MessageViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val messageTextView: TextView = view.findViewById(android.R.id.text1)
+    fun bind(message: ChatMessage) {
+        messageText.text = message.message
+        senderIdText.text = "From: ${message.senderId}"
     }
 }
