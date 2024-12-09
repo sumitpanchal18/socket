@@ -12,3 +12,7 @@ data class ChatMessage(
 ) {
     fun toJson(): String = Gson().toJson(this)
 }
+
+
+
+// (JavaScript Object Notation) format. This is a common format for sending data over the web.
