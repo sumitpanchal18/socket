@@ -12,6 +12,8 @@ import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.net.URI
+import android.provider.Settings
+
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
@@ -22,8 +24,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var messageAdapter: MessageAdapter
 
     companion object {
-        private const val WEB_SOCKET_URL =
-            "ws://192.168.1.249:8080"
+//        private const val WEB_SOCKET_URL = "ws://152.58.62.254:8080"
+        private const val WEB_SOCKET_URL = "ws://192.168.1.249:8080"
     }
 
     private var CURRENT_USER_ID: String = ""
@@ -43,24 +45,44 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MainActivity)
         }
 
-        CURRENT_USER_ID = UUID.randomUUID().toString()
-        RECEIVER_USER_ID =
-            if (CURRENT_USER_ID == "user123") "user456" else "user123"
+        // Generate unique IDs for the current user
+        CURRENT_USER_ID = getUniqueUserId()
+
+        // Initialize receiver ID dynamically (set later when assigned)
+        RECEIVER_USER_ID = ""
 
         setupWebSocket()
         sendButton.setOnClickListener { sendMessage() }
     }
-
+    private fun getUniqueUserId(): String {
+        val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        return UUID.nameUUIDFromBytes(androidId.toByteArray()).toString()
+    }
     private fun setupWebSocket() {
         webSocketClient = ChatWebSocketClient(
             URI(WEB_SOCKET_URL),
             onMessageReceived = { messageJson ->
                 val message = Gson().fromJson(messageJson, ChatMessage::class.java)
-                runOnUiThread {
-                    messageAdapter.addMessage(message)
+
+                // Handle dynamic receiver ID assignment
+                if (message.senderId == "server") {
+                    RECEIVER_USER_ID = message.message // Server sends the receiver ID
+                } else {
+                    runOnUiThread {
+                        messageAdapter.addMessage(message)
+                    }
                 }
             },
             onConnectionOpen = {
+                // Notify server of the current user's ID
+                val userIdMessage = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    message = CURRENT_USER_ID,
+                    senderId = "server",
+                    receiverId = "server"
+                )
+                webSocketClient.sendChatMessage(userIdMessage)
+
                 runOnUiThread {
                     Toast.makeText(this, "Connected to chat", Toast.LENGTH_SHORT).show()
                 }
